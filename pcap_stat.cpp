@@ -10,8 +10,14 @@ int main(int argc, char **argv) {
   const char* filename = argv[1];
   PcapWrapper wrapper(filename);
 
-  EthPacket eth = wrapper.Next();
-  eth.Show();
+  for (;;) {
+    try {
+      EthPacket eth = wrapper.Next();
+      eth.Show();
+    } catch(const std::exception& e) {
+      break;
+    }
+  }
 
   return EXIT_SUCCESS;
 }

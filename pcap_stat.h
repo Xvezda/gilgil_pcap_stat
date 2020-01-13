@@ -29,6 +29,7 @@ public:
     for (size_t i = 0; i < Size(); ++i) {
       mac_address[i] = raw_packet[i];
     }
+    mac_address_buf[0] = '\0';
   }
   virtual ~MacAddress() {}
 
@@ -46,6 +47,8 @@ public:
         std::strncat(mac_address_buf, separator, sizeof(mac_address_buf));
       }
     }
+    mac_address_buf[sizeof(mac_address_buf) - 1] = '\0';
+
     return mac_address_buf;
   }
 
@@ -53,7 +56,7 @@ private:
   static constexpr char separator[] = ":";
 
   uint8_t mac_address[6];
-  char    mac_address_buf[6*2 + (6-1)];
+  char    mac_address_buf[6*2 + (6-1) + 1];
 };
 constexpr char MacAddress::separator[];
 
@@ -68,6 +71,7 @@ public:
     std::cout << "dmac:\t" << dmac.CStr() << std::endl;
     std::cout << "smac:\t" << smac.CStr() << std::endl;
   }
+
 private:
   MacAddress dmac;
   MacAddress smac;
@@ -86,7 +90,7 @@ public:
     if (handle == nullptr) throw std::runtime_error(errbuf);
   }
 
-  EthPacket Next() {
+  const EthPacket Next() {
     int result = pcap_next_ex(handle, &header, &raw_packet);
 
     if (result != 1) throw std::runtime_error(errbuf);
