@@ -7,5 +7,8 @@ TARGET = pcap_stat
 
 all: $(TARGET)
 
+debug: CPPFLAGS += -DDEBUG -g -O0
+debug: all
+
 clean:
 	rm -rf $(TARGET) *.o
