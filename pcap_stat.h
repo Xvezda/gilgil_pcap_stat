@@ -2,6 +2,10 @@
 #define PCAP_STAT_H_
 
 #include <iostream>
+#include <iomanip>
+#include <utility>
+#include <string>
+#include <map>
 
 #include <cstdio>
 #include <cstring>
@@ -17,43 +21,79 @@
 #define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
 
 
-class PacketData {
+const auto kByteBits = 8;
+const auto kEthSize  = 14;
+
+
+typedef struct statistics_table_s {
+  size_t packets;
+  size_t bytes;
+} statistics_t;
+
+
+class MACAddress {
 public:
-  PacketData() {}
-  virtual ~PacketData() {}
-};
-
-struct arp_header_s {
-  unsigned hw_type      : 16;
-  unsigned proto_type   : 16;
-  unsigned hw_len       : 8;
-  unsigned proto_len    : 8;
-  unsigned operation    : 16;
-  unsigned s_hw_addr    : 32;
-  unsigned s_proto_addr : 32;
-  unsigned d_hw_addr    : 32;
-  unsigned d_proto_addr : 32;
-};
-
-class ArpPacket : public PacketData {
-public:
-  using arp_header_t = struct arp_header_s;
-
-  ArpPacket(const u_char *raw_packet) {
-    std::memcpy(&header, raw_packet, sizeof(header));
+  MACAddress(const u_char* raw_packet) {
+    for (size_t i = 0; i < Size(); ++i) {
+      mac_addr[i] = raw_packet[i];
+    }
+    mac_addr_buf[0] = '\0';
   }
-  virtual ~ArpPacket() {}
+  virtual ~MACAddress() {}
+
+  static constexpr size_t Size() {
+    return ARRLEN(mac_addr);
+  }
+
+  const char* CStr() const {
+    char tmpbuf[ /* Hex */ 2 + /* Null character */ 1];
+
+    for (size_t i = 0; i < Size(); ++i) {
+      std::snprintf(tmpbuf, sizeof(tmpbuf), "%02x", mac_addr[i]);
+      std::strncat(mac_addr_buf, tmpbuf, sizeof(mac_addr_buf));
+      if (i != Size() - 1) {
+        std::strncat(mac_addr_buf, separator, sizeof(mac_addr_buf));
+      }
+    }
+    mac_addr_buf[sizeof(mac_addr_buf) - 1] = '\0';
+
+    return mac_addr_buf;
+  }
+
+  bool operator<(const MACAddress& other) const {
+    for (size_t i = 0; i < ARRLEN(mac_addr); ++i) {
+      if (mac_addr[i] < other.mac_addr[i]) return true;
+    }
+    return false;
+  }
+
+  bool operator>(const MACAddress& other) const {
+    return !(other < *this);
+  }
+
+  bool operator==(const MACAddress& other) const {
+    return !(*this < other) && !(other < *this);
+  }
+
+  bool operator!=(const MACAddress& other) const {
+    return !(*this == other);
+  }
+
 private:
-  arp_header_t header;
+  static constexpr char separator[] = ":";
+
+  uint8_t         mac_addr[6];
+  mutable char    mac_addr_buf[ARRLEN(mac_addr)*2 + (ARRLEN(mac_addr)-1) + 1];
 };
+constexpr char MACAddress::separator[];
 
 
-class IpAddress {
+class IPAddress {
 public:
-  IpAddress(uint32_t ip) {
+  IPAddress(uint32_t ip) {
     address = ip;
   }
-  virtual ~IpAddress() {}
+  virtual ~IPAddress() {}
 
   const char* CStr() const {
     struct sockaddr_in addr;
@@ -64,15 +104,74 @@ public:
   operator const char*() {
     return CStr();
   }
+
+  bool operator<(const IPAddress& other) const {
+    return address < other.address;
+  }
+
+  bool operator>(const IPAddress& other) const {
+    return other.address < address;
+  }
+
+  bool operator==(const IPAddress& other) const {
+    return !(address < other.address) && !(other.address < address);
+  }
+
+  bool operator!=(const IPAddress& other) const {
+    return !(address == other.address);
+  }
 private:
   uint32_t address;
-#if 0
-  char     ip_addr_buf[ /* 0 ~ 255 x 4 */ 3*4 +
-                        /* Separator */   1*4 +
-                        /* Null */        1 ];
-#endif
 };
 
+
+class PacketData {
+public:
+  PacketData() {}
+  virtual ~PacketData() {}
+  virtual const IPAddress GetSIP() const = 0;
+  virtual const IPAddress GetDIP() const = 0;
+  virtual size_t GetTotal() const = 0;
+};
+
+struct arp_header_s {
+  unsigned hw_type      : 16;
+  unsigned proto_type   : 16;
+  unsigned hw_len       : 8;
+  unsigned proto_len    : 8;
+  unsigned operation    : 16;
+
+  uint8_t  s_hw_addr[6];
+  uint32_t s_proto_addr;
+  uint8_t  d_hw_addr[6];
+  uint32_t d_proto_addr;
+} __attribute__((aligned(1), packed));
+
+class ArpPacket : public PacketData {
+public:
+  using arp_header_t = struct arp_header_s;
+
+  ArpPacket(const u_char *raw_packet) {
+    std::memcpy(&header, raw_packet, sizeof(header));
+  }
+  virtual ~ArpPacket() {}
+
+  const IPAddress GetSIP() const override {
+    return IPAddress(header.s_proto_addr);
+  }
+
+  const IPAddress GetDIP() const override {
+    return IPAddress(header.d_proto_addr);
+  }
+
+  size_t GetTotal() const override {
+    return (/* HW type(16) + Proto type(16) */              32 / kByteBits +
+            /* HW addr(8) + Proto addr(8) + opcode(16) */ + 32 / kByteBits +
+            header.hw_len * 2 + header.proto_len * 2);
+  }
+private:
+  arp_header_t header;
+};
 
 struct ip_header_s {
   unsigned version     : 4;
@@ -91,22 +190,27 @@ struct ip_header_s {
   unsigned padding     : 8;
 };
 
-class IpPacket : public PacketData {
+class IPPacket : public PacketData {
 public:
   using ip_header_t = struct ip_header_s;
 
-  IpPacket(const u_char* raw_packet) {
+  IPPacket(const u_char* raw_packet) {
     std::memcpy(&header, raw_packet, sizeof(header));
   }
-  virtual ~IpPacket() {}
+  virtual ~IPPacket() {}
 
-  const IpAddress GetSip() {
-    return IpAddress(header.sip);
+  const IPAddress GetSIP() const override {
+    return IPAddress(header.sip);
   }
 
-  const IpAddress GetDip() {
-    return IpAddress(header.dip);
+  const IPAddress GetDIP() const override {
+    return IPAddress(header.dip);
   }
+
+  size_t GetTotal() const override {
+    return header.total;
+  }
+
 private:
   ip_header_t header;
 };
@@ -139,56 +243,20 @@ private:
   uint8_t type[2];
 };
 
-class MacAddress {
-public:
-  MacAddress(const u_char* raw_packet) {
-    for (size_t i = 0; i < Size(); ++i) {
-      mac_addr[i] = raw_packet[i];
-    }
-    mac_addr_buf[0] = '\0';
-  }
-  virtual ~MacAddress() {}
-
-  static constexpr size_t Size() {
-    return ARRLEN(mac_addr);
-  }
-
-  const char* CStr() {
-    char tmpbuf[ /* Hex */ 2 + /* Null character */ 1];
-
-    for (size_t i = 0; i < Size(); ++i) {
-      std::snprintf(tmpbuf, sizeof(tmpbuf), "%02x", mac_addr[i]);
-      std::strncat(mac_addr_buf, tmpbuf, sizeof(mac_addr_buf));
-      if (i != Size() - 1) {
-        std::strncat(mac_addr_buf, separator, sizeof(mac_addr_buf));
-      }
-    }
-    mac_addr_buf[sizeof(mac_addr_buf) - 1] = '\0';
-
-    return mac_addr_buf;
-  }
-
-private:
-  static constexpr char separator[] = ":";
-
-  uint8_t mac_addr[6];
-  char    mac_addr_buf[ARRLEN(mac_addr)*2 + (ARRLEN(mac_addr)-1) + 1];
-};
-constexpr char MacAddress::separator[];
 
 class EthPacket {
 public:
   EthPacket(const u_char* raw_packet)
-      : dmac(raw_packet), smac(raw_packet + MacAddress::Size()),
-        type(raw_packet + MacAddress::Size() * 2) {
-    const u_char* data_ptr = raw_packet + MacAddress::Size() * 2 + \
+      : dmac(raw_packet), smac(raw_packet + MACAddress::Size()),
+        type(raw_packet + MACAddress::Size() * 2) {
+    const u_char* data_ptr = raw_packet + MACAddress::Size() * 2 +
                        EthType::Size();
     u_char* type_ptr = static_cast<u_char*>(type);
 
     if (type_ptr[0] == 0x08 && type_ptr[1] == 0x06) {
       data = new ArpPacket(data_ptr);
     } else {  // TODO: Add other protocols
-      data = new IpPacket(data_ptr);
+      data = new IPPacket(data_ptr);
     }
   }
 
@@ -203,19 +271,61 @@ public:
     std::cout << "smac:\t" << smac.CStr() << std::endl;
     std::cout << "type:\t" << type.CStr() << std::endl;
 
-    u_char* type_ptr = static_cast<u_char*>(type);
+    //u_char* type_ptr = static_cast<u_char*>(type);
     // If type is IPv4
+    /*
     if (type_ptr[0] == 0x08 && type_ptr[1] == 0x00) {
-      std::cout << "sip: " << dynamic_cast<IpPacket*>(data)->GetSip().CStr()
+      std::cout << "sip:\t" << dynamic_cast<IPPacket*>(data)->GetSIP().CStr()
                 << std::endl;
-      std::cout << "dip: " << dynamic_cast<IpPacket*>(data)->GetDip().CStr()
+      std::cout << "dip:\t" << dynamic_cast<IPPacket*>(data)->GetDIP().CStr()
+                << std::endl;
+      std::cout << "total:\t" << dynamic_cast<IPPacket*>(data)->GetTotal()
+                << std::endl;
+    } else {
+      std::cout << "sip:\t" << dynamic_cast<ArpPacket*>(data)->GetSIP().CStr()
+                << std::endl;
+      std::cout << "dip:\t" << dynamic_cast<ArpPacket*>(data)->GetDIP().CStr()
+                << std::endl;
+      std::cout << "total:\t" << dynamic_cast<ArpPacket*>(data)->GetTotal()
                 << std::endl;
     }
+    */
+    std::cout << "sip:\t" << data->GetSIP().CStr()
+              << std::endl;
+    std::cout << "dip:\t" << data->GetDIP().CStr()
+              << std::endl;
+    std::cout << "total:\t" << data->GetTotal()
+              << std::endl;
+    std::cout << std::endl;
+  }
+
+  const MACAddress GetDMAC() const {
+    return dmac;
+  }
+
+  const MACAddress GetSMAC() const {
+    return smac;
+  }
+
+  const IPAddress GetSIP() const {
+    return data->GetSIP();
+  }
+
+  const IPAddress GetDIP() const {
+    return data->GetDIP();
+  }
+
+  const PacketData* GetPacketData() const {
+    return data;
+  }
+
+  size_t GetTotal() const {
+    return kEthSize + data->GetTotal();
   }
 
 private:
-  MacAddress  dmac;
-  MacAddress  smac;
+  MACAddress  dmac;
+  MACAddress  smac;
   EthType     type;
   PacketData* data;
 };
@@ -245,7 +355,141 @@ public:
       pcap_close(handle);
     }
   }
+
+  void Statistic() {
+    for (;;) {
+      try {
+        EthPacket eth = Next();
+
+        /* End points */
+        try {
+          mac_eps[eth.GetDMAC()].packets += 1;
+          mac_eps[eth.GetSMAC()].packets += 1;
+          mac_eps[eth.GetDMAC()].bytes   += eth.GetTotal();
+          mac_eps[eth.GetSMAC()].bytes   += eth.GetTotal();
+          ip_eps[eth.GetDIP()].packets   += 1;
+          ip_eps[eth.GetSIP()].packets   += 1;
+          ip_eps[eth.GetDIP()].bytes     += eth.GetTotal();
+          ip_eps[eth.GetSIP()].bytes     += eth.GetTotal();
+        } catch (const std::out_of_range& e_) {
+          mac_eps[eth.GetDMAC()].packets = 0;
+          mac_eps[eth.GetSMAC()].packets = 0;
+          mac_eps[eth.GetDMAC()].bytes   = 0;
+          mac_eps[eth.GetSMAC()].bytes   = 0;
+          ip_eps[eth.GetDIP()].packets   = 0;
+          ip_eps[eth.GetSIP()].packets   = 0;
+          ip_eps[eth.GetDIP()].bytes     = 0;
+          ip_eps[eth.GetSIP()].bytes     = 0;
+        }
+
+        /* Conversations */
+        try {
+          mac_convs[std::make_pair(eth.GetDMAC(), eth.GetSMAC())].packets
+            += 1;
+          ip_convs[std::make_pair(eth.GetSIP(), eth.GetDIP())].packets
+            += 1;
+          mac_convs[std::make_pair(eth.GetDMAC(), eth.GetSMAC())].bytes
+            += eth.GetTotal();
+          ip_convs[std::make_pair(eth.GetSIP(), eth.GetDIP())].bytes
+            += eth.GetTotal();
+        } catch (const std::out_of_range& e_) {
+          mac_convs[std::make_pair(eth.GetDMAC(), eth.GetSMAC())].packets
+            = 0;
+          ip_convs[std::make_pair(eth.GetSIP(), eth.GetDIP())].packets
+            = 0;
+          mac_convs[std::make_pair(eth.GetDMAC(), eth.GetSMAC())].bytes
+            = 0;
+          ip_convs[std::make_pair(eth.GetSIP(), eth.GetDIP())].bytes
+            = 0;
+        }
+      } catch(const std::exception& e) {
+        break;
+      }
+    }
+
+    /* Eth end points */
+    std::cout << std::string(20, '=') << " Endpoints "
+              << std::string(20, '=') << std::endl;
+
+    std::cout << std::setiosflags(std::ios::fixed)
+              << std::setw(18) << std::setprecision(3) << std::left
+              << "Address" << " | "
+              << "Packets" << " | "
+              << "Bytes" << std::endl;
+    std::cout << std::string(79, '-') << std::endl;
+    for (auto const& x : mac_eps) {
+      std::cout << std::setiosflags(std::ios::fixed)
+                << std::setw(18) << std::setprecision(3) << std::left
+                << x.first.CStr() << " | "
+                << x.second.packets << " | "
+                << x.second.bytes << std::endl;
+    }
+    std::cout << std::endl;
+
+    /* IP end points */
+      std::cout << std::setiosflags(std::ios::fixed)
+                << std::setw(18) << std::setprecision(3) << std::left
+                << "Address" << " | "
+                << "Packets" << " | "
+                << "Bytes" << std::endl;
+      std::cout << std::string(79, '-') << std::endl;
+    for (auto const& x : ip_eps) {
+      std::cout << std::setiosflags(std::ios::fixed)
+                << std::setw(18) << std::setprecision(3) << std::left
+                << x.first.CStr() << " | "
+                << x.second.packets << " | "
+                << x.second.bytes << std::endl;
+    }
+    std::cout << std::endl;
+
+    /* Ethernet conversations */
+    std::cout << std::string(20, '=') << " Conversations "
+              << std::string(20, '=') << std::endl;
+
+    std::cout << std::setiosflags(std::ios::fixed)
+              << std::setw(18) << std::setprecision(3) << std::left
+              << "Address A" << " | "
+              << "Address B" << " | "
+              << "Packets" << " | "
+              << "Bytes" << std::endl;
+    std::cout << std::string(79, '-') << std::endl;
+    for (auto const& x : mac_convs) {
+      std::cout << std::setiosflags(std::ios::fixed)
+                << std::setw(18) << std::setprecision(3) << std::left
+                << x.first.first.CStr() << " | "
+                << x.first.second.CStr() << " | "
+                << x.second.packets << " | "
+                << x.second.bytes << std::endl;
+    }
+    std::cout << std::endl;
+
+    /* IP conversations */
+    std::cout << std::setiosflags(std::ios::fixed)
+              << std::setw(18) << std::setprecision(3) << std::left
+              << "Address A" << " | "
+              << "Address B" << " | "
+              << "Packets" << " | "
+              << "Bytes" << std::endl;
+    std::cout << std::string(79, '-') << std::endl;
+    for (auto const& x : ip_convs) {
+      std::cout << std::setiosflags(std::ios::fixed)
+                << std::setw(18) << std::setprecision(3) << std::left
+                << x.first.first.CStr() << " | "
+                << x.first.second.CStr() << " | "
+                << x.second.packets << " | "
+                << x.second.bytes << std::endl;
+    }
+    std::cout << std::endl;
+  }
 private:
+  /* End points */
+  std::map<MACAddress, statistics_t> mac_eps;
+  std::map<IPAddress, statistics_t> ip_eps;
+
+  /* Conversations */
+  std::map<std::pair<MACAddress, MACAddress>, statistics_t> mac_convs;
+  std::map<std::pair<IPAddress, IPAddress>, statistics_t> ip_convs;
+
   pcap_t* handle;
 
   struct  pcap_pkthdr* header;
