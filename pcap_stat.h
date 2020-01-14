@@ -270,26 +270,6 @@ public:
     std::cout << "dmac:\t" << dmac.CStr() << std::endl;
     std::cout << "smac:\t" << smac.CStr() << std::endl;
     std::cout << "type:\t" << type.CStr() << std::endl;
-
-    //u_char* type_ptr = static_cast<u_char*>(type);
-    // If type is IPv4
-    /*
-    if (type_ptr[0] == 0x08 && type_ptr[1] == 0x00) {
-      std::cout << "sip:\t" << dynamic_cast<IPPacket*>(data)->GetSIP().CStr()
-                << std::endl;
-      std::cout << "dip:\t" << dynamic_cast<IPPacket*>(data)->GetDIP().CStr()
-                << std::endl;
-      std::cout << "total:\t" << dynamic_cast<IPPacket*>(data)->GetTotal()
-                << std::endl;
-    } else {
-      std::cout << "sip:\t" << dynamic_cast<ArpPacket*>(data)->GetSIP().CStr()
-                << std::endl;
-      std::cout << "dip:\t" << dynamic_cast<ArpPacket*>(data)->GetDIP().CStr()
-                << std::endl;
-      std::cout << "total:\t" << dynamic_cast<ArpPacket*>(data)->GetTotal()
-                << std::endl;
-    }
-    */
     std::cout << "sip:\t" << data->GetSIP().CStr()
               << std::endl;
     std::cout << "dip:\t" << data->GetDIP().CStr()
