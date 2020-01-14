@@ -57,7 +57,9 @@ private:
   static constexpr char separator[] = ":";
 
   uint8_t         mac_addr[6];
-  mutable char    mac_addr_buf[ARRLEN(mac_addr)*2 + (ARRLEN(mac_addr)-1) + 1];
+  mutable char    mac_addr_buf[ /* Hex */        ARRLEN(mac_addr)*2 +
+                                /* Separator */ (ARRLEN(mac_addr)-1) +
+                                /* Null */ 1 ];
 };
 constexpr char MACAddress::separator[];
 
