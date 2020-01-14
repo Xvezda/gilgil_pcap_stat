@@ -1,3 +1,4 @@
+// Copyright (C) 2020 Xvezda <https://xvezda.com/>
 #ifndef PCAP_STAT_IP_H_
 #define PCAP_STAT_IP_H_
 

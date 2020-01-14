@@ -1,3 +1,4 @@
+// Copyright (C) 2020 Xvezda <https://xvezda.com/>
 #include "pcap_stat.h"
 
 
