@@ -24,9 +24,9 @@ public:
 
     for (size_t i = 0; i < Size(); ++i) {
       std::snprintf(tmpbuf, sizeof(tmpbuf), "%02x", mac_addr[i]);
-      std::strncat(mac_addr_buf, tmpbuf, sizeof(mac_addr_buf));
+      std::strncat(mac_addr_buf, tmpbuf, std::strlen(tmpbuf));
       if (i != Size() - 1) {
-        std::strncat(mac_addr_buf, separator, sizeof(mac_addr_buf));
+        std::strncat(mac_addr_buf, separator, std::strlen(separator));
       }
     }
     mac_addr_buf[sizeof(mac_addr_buf) - 1] = '\0';
