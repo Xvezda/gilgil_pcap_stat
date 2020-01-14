@@ -3,6 +3,25 @@
 #define PCAP_STAT_IP_H_
 
 #include "pcap_stat_common.h"
+#include "pcap_stat_int.h"
+
+
+struct ip_header_s {
+  unsigned version     : 4;
+  unsigned header_len  : 4;
+  unsigned tos         : 8;
+  unsigned total       : 16;
+  unsigned id          : 16;
+  unsigned flag        : 3;
+  unsigned frag_offset : 13;
+  unsigned ttl         : 8;
+  unsigned proto_id    : 8;
+  unsigned checksum    : 16;
+  unsigned sip         : 32;
+  unsigned dip         : 32;
+  unsigned option      : 24;
+  unsigned padding     : 8;
+};
 
 
 class IPAddress {
@@ -41,6 +60,31 @@ private:
   uint32_t address;
 };
 
+
+class IPPacket : public PacketData {
+public:
+  using ip_header_t = struct ip_header_s;
+
+  IPPacket(const u_char* raw_packet) {
+    std::memcpy(&header, raw_packet, sizeof(header));
+  }
+  virtual ~IPPacket() {}
+
+  const IPAddress GetSIP() const override {
+    return IPAddress(header.sip);
+  }
+
+  const IPAddress GetDIP() const override {
+    return IPAddress(header.dip);
+  }
+
+  size_t GetTotal() const override {
+    return header.total;
+  }
+
+private:
+  ip_header_t header;
+};
 
 
 #endif  // PCAP_STAT_IP_H_
