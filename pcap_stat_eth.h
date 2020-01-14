@@ -8,6 +8,9 @@
 #include "pcap_stat_ip.h"
 #include "pcap_stat_arp.h"
 
+const auto kEthSize = 14;
+
+
 class EthType {
 public:
   EthType(const u_char* raw_packet) {
