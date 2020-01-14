@@ -1,128 +1,15 @@
 #ifndef PCAP_STAT_H_
 #define PCAP_STAT_H_
 
-#include <iostream>
-#include <iomanip>
-#include <utility>
-#include <string>
-#include <map>
-
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
-#include <cstdint>
-
-#include <unistd.h>
-#include <arpa/inet.h>
-
-#include <pcap/pcap.h>
-
-
-#define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
-
-
-const auto kByteBits = 8;
-const auto kEthSize  = 14;
+#include "pcap_stat_common.h"
+#include "pcap_stat_mac.h"
+#include "pcap_stat_ip.h"
 
 
 typedef struct statistics_table_s {
   size_t packets;
   size_t bytes;
 } statistics_t;
-
-
-class MACAddress {
-public:
-  MACAddress(const u_char* raw_packet) {
-    for (size_t i = 0; i < Size(); ++i) {
-      mac_addr[i] = raw_packet[i];
-    }
-    mac_addr_buf[0] = '\0';
-  }
-  virtual ~MACAddress() {}
-
-  static constexpr size_t Size() {
-    return ARRLEN(mac_addr);
-  }
-
-  const char* CStr() const {
-    char tmpbuf[ /* Hex */ 2 + /* Null character */ 1];
-
-    for (size_t i = 0; i < Size(); ++i) {
-      std::snprintf(tmpbuf, sizeof(tmpbuf), "%02x", mac_addr[i]);
-      std::strncat(mac_addr_buf, tmpbuf, sizeof(mac_addr_buf));
-      if (i != Size() - 1) {
-        std::strncat(mac_addr_buf, separator, sizeof(mac_addr_buf));
-      }
-    }
-    mac_addr_buf[sizeof(mac_addr_buf) - 1] = '\0';
-
-    return mac_addr_buf;
-  }
-
-  bool operator<(const MACAddress& other) const {
-    for (size_t i = 0; i < ARRLEN(mac_addr); ++i) {
-      if (mac_addr[i] < other.mac_addr[i]) return true;
-    }
-    return false;
-  }
-
-  bool operator>(const MACAddress& other) const {
-    return !(other < *this);
-  }
-
-  bool operator==(const MACAddress& other) const {
-    return !(*this < other) && !(other < *this);
-  }
-
-  bool operator!=(const MACAddress& other) const {
-    return !(*this == other);
-  }
-
-private:
-  static constexpr char separator[] = ":";
-
-  uint8_t         mac_addr[6];
-  mutable char    mac_addr_buf[ARRLEN(mac_addr)*2 + (ARRLEN(mac_addr)-1) + 1];
-};
-constexpr char MACAddress::separator[];
-
-
-class IPAddress {
-public:
-  IPAddress(uint32_t ip) {
-    address = ip;
-  }
-  virtual ~IPAddress() {}
-
-  const char* CStr() const {
-    struct sockaddr_in addr;
-    addr.sin_addr.s_addr = address;
-    return inet_ntoa(addr.sin_addr);
-  }
-
-  operator const char*() {
-    return CStr();
-  }
-
-  bool operator<(const IPAddress& other) const {
-    return address < other.address;
-  }
-
-  bool operator>(const IPAddress& other) const {
-    return other.address < address;
-  }
-
-  bool operator==(const IPAddress& other) const {
-    return !(address < other.address) && !(other.address < address);
-  }
-
-  bool operator!=(const IPAddress& other) const {
-    return !(address == other.address);
-  }
-private:
-  uint32_t address;
-};
 
 
 class PacketData {
